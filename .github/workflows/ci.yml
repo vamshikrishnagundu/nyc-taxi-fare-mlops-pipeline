@@ -1,0 +1,66 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip wheel
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # The webhook forwarder runs in its own container, but the unit tests
+        # import its pure helpers, so its Flask dependency is needed here too.
+        pip install -r tools/webhook_forwarder/requirements.txt
+        # mlflow imports pkg_resources, which Python 3.12 no longer bundles and
+        # setuptools>=81 removed — pin the last version that still ships it.
+        # Installed last so nothing upgrades it away.
+        pip install flake8 pytest "setuptools<81"
+
+    - name: Run Linter (Flake8)
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings.
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run Tests
+      run: pytest tests/ -v
+
+  release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Create Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG_NAME="v$(date +'%Y.%m.%d-%H%M%S')"
+        gh release create "$TAG_NAME" \
+          --title "Release $TAG_NAME" \
+          --notes "Automated release on merge to main" \
+          --generate-notes
+

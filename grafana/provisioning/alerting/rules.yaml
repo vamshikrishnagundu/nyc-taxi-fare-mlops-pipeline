@@ -1,0 +1,142 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Data Quality Alerts
+    folder: NYC Taxi
+    interval: 10s
+    rules:
+      - uid: alert-high-failures
+        title: High Validation Failures
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: PostgreSQL
+            model:
+              rawSql: "SELECT invalid_rows FROM ingestion_stats ORDER BY ingested_at DESC LIMIT 1"
+              format: "table"
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    params: [50]
+                    type: gt
+        noDataState: NoData
+        execErrState: Error
+        for: 10s
+        annotations:
+          summary: "Validation failures exceed threshold"
+          description: "The most recent ingestion has more than 50 invalid rows."
+        labels:
+          alert_channel: data-quality
+      - uid: alert-all-errors
+        title: All Ingested Data Has Errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: PostgreSQL
+            model:
+              rawSql: "SELECT CASE WHEN total_rows > 0 THEN (invalid_rows * 100.0 / total_rows) ELSE 0 END as pct FROM ingestion_stats ORDER BY ingested_at DESC LIMIT 1"
+              format: "table"
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    params: [95]
+                    type: gt
+        noDataState: NoData
+        execErrState: Error
+        for: 10s
+        annotations:
+          summary: "Almost all ingested rows are invalid"
+          description: "Over 95% of rows in the last ingestion failed validation."
+        labels:
+          alert_channel: data-quality
+
+  - orgId: 1
+    name: ML Alerts
+    folder: NYC Taxi
+    interval: 10s
+    rules:
+      - uid: alert-drift-detected
+        title: Significant Feature Drift Detected
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: PostgreSQL
+            model:
+              rawSql: "SELECT ABS(AVG(p.distance_km) - COALESCE(MAX(t.distance_mean), 3.0)) as drift_dist FROM predictions p CROSS JOIN (SELECT distance_mean FROM training_stats WHERE is_promoted = true ORDER BY promoted_at DESC LIMIT 1) t WHERE p.created_at >= NOW() - INTERVAL '1 hour'"
+              format: "table"
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    params: [2.0]
+                    type: gt
+        noDataState: OK
+        execErrState: Error
+        for: 10s
+        annotations:
+          summary: "Significant trip distance feature drift"
+          description: "Average trip distance in serving has drifted by > 2.0 km from the training baseline."
+        labels:
+          alert_channel: ml
+      - uid: alert-constant-predictions
+        title: Model Output Constant Predictions
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: PostgreSQL
+            model:
+              rawSql: "SELECT STDDEV(predicted_fare) FROM (SELECT predicted_fare FROM predictions ORDER BY created_at DESC LIMIT 10) sub"
+              format: "table"
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    params: [0.01]
+                    type: lt
+        noDataState: OK
+        execErrState: Error
+        for: 10s
+        annotations:
+          summary: "Constant predictions warning"
+          description: "Model output has standard deviation < 0.01 over the last 10 predictions."
+        labels:
+          alert_channel: ml

@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: PostgreSQL
+    uid: PostgreSQL
+    type: postgres
+    access: proxy
+    url: db:5432
+    database: taxifare
+    user: postgres
+    secureJsonData:
+      password: "password"
+    isDefault: true
+    editable: true
+    jsonData:
+      sslmode: disable

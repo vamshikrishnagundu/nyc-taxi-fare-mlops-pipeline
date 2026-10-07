@@ -1,0 +1,31 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Data Quality Alerts Channel
+    receivers:
+      - uid: cp-data-quality
+        type: webhook
+        settings:
+          url: http://webhook-forwarder:8085/teams
+          httpMethod: POST
+  - orgId: 1
+    name: ML Alerts Channel
+    receivers:
+      - uid: cp-ml-alerts
+        type: webhook
+        settings:
+          url: http://webhook-forwarder:8085/teams/ml-alerts
+          httpMethod: POST
+
+policies:
+  - orgId: 1
+    receiver: Data Quality Alerts Channel
+    group_by: ['alertname']
+    routes:
+      - receiver: Data Quality Alerts Channel
+        object_matchers:
+          - ['alert_channel', '=', 'data-quality']
+      - receiver: ML Alerts Channel
+        object_matchers:
+          - ['alert_channel', '=', 'ml']
